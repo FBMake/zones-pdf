@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zones PDF</title>
+<meta name="description" content="Délimitez des zones sur n'importe quel PDF, récupérez leurs coordonnées et remplissez le document. Tout se passe dans votre navigateur." />
+<meta name="color-scheme" content="light dark" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><img src="icon.svg" alt="" width="22" height="22" /> Zones PDF</div>
+  <button id="open-btn" class="btn primary" type="button">Ouvrir un PDF</button>
+  <input type="file" id="pdf-input" accept="application/pdf,.pdf" hidden />
+  <span id="doc-name" class="doc-name"></span>
+
+  <div class="tools-row" id="nav" hidden>
+    <div class="group" role="group" aria-label="Pages">
+      <button class="btn icon" id="prev-page" type="button" title="Page précédente (Page ↑)" aria-label="Page précédente">‹</button>
+      <label class="page-label"><input type="number" id="page-input" min="1" value="1" aria-label="Numéro de page" /> / <span id="page-count">1</span></label>
+      <button class="btn icon" id="next-page" type="button" title="Page suivante (Page ↓)" aria-label="Page suivante">›</button>
+    </div>
+    <div class="group" role="group" aria-label="Zoom">
+      <button class="btn icon" id="zoom-out" type="button" title="Dézoomer (−)" aria-label="Dézoomer">−</button>
+      <button class="btn" id="zoom-fit" type="button" title="Ajuster à la largeur">100 %</button>
+      <button class="btn icon" id="zoom-in" type="button" title="Zoomer (+)" aria-label="Zoomer">+</button>
+    </div>
+    <div class="group" role="group" aria-label="Historique">
+      <button class="btn icon" id="undo-btn" type="button" title="Annuler (Ctrl+Z)" aria-label="Annuler" disabled>↶</button>
+      <button class="btn icon" id="redo-btn" type="button" title="Rétablir (Ctrl+Y)" aria-label="Rétablir" disabled>↷</button>
+    </div>
+  </div>
+  <button class="btn icon help" id="help-btn" type="button" title="Aide" aria-label="Aide">?</button>
+</header>
+
+<main class="layout">
+  <section id="viewer" class="viewer">
+    <div id="empty" class="empty">
+      <div class="drop">
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="64" height="64"><path d="M14 6h26l12 12v40H14z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M40 6v12h12" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><rect x="21" y="28" width="22" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="4 3"/><rect x="21" y="42" width="14" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="4 3"/></svg>
+        </div>
+        <h1>Délimitez des zones sur n'importe quel PDF</h1>
+        <p>Glissez un fichier PDF ici, ou <button id="empty-open" class="link" type="button">choisissez-en un</button>.</p>
+        <ul class="features">
+          <li>Dessinez des zones de texte, des paragraphes, des cases à cocher ou des emplacements d'image.</li>
+          <li>Récupérez leurs coordonnées exactes (JSON ou tableur).</li>
+          <li>Remplissez le PDF et téléchargez le résultat.</li>
+        </ul>
+        <p class="privacy">🔒 Votre fichier reste sur votre appareil : rien n'est envoyé sur Internet.</p>
+      </div>
+    </div>
+    <div id="page-wrap" class="page-wrap" hidden>
+      <div id="page-box" class="page-box">
+        <canvas id="page-canvas"></canvas>
+        <div id="overlay" class="overlay" tabindex="-1"></div>
+      </div>
+    </div>
+    <div id="loading" class="loading" hidden>Chargement…</div>
+  </section>
+
+  <aside id="panel" class="panel" hidden>
+    <section>
+      <h2>Outil</h2>
+      <div class="tool-grid" role="radiogroup" aria-label="Outil">
+        <button class="tool active" data-tool="select" type="button" title="Sélectionner et déplacer (V)"><span class="ti">⬚</span>Sélection</button>
+        <button class="tool" data-tool="text" type="button" title="Texte sur une ligne (T)"><span class="ti">T</span>Texte</button>
+        <button class="tool" data-tool="multiline" type="button" title="Paragraphe multi-ligne (P)"><span class="ti">¶</span>Paragraphe</button>
+        <button class="tool" data-tool="checkbox" type="button" title="Case à cocher (C)"><span class="ti">☑</span>Case</button>
+        <button class="tool" data-tool="image" type="button" title="Emplacement d'image (I)"><span class="ti">▣</span>Image</button>
+        <button class="tool" data-tool="grid" type="button" title="Grille de zones (G)"><span class="ti">▦</span>Grille</button>
+      </div>
+      <p class="hint" id="tool-hint"></p>
+    </section>
+
+    <section id="grid-panel" class="card" hidden>
+      <h3>Créer une grille</h3>
+      <p class="hint" id="grid-area-info"></p>
+      <label>Nom de base<input type="text" id="grid-basename" value="champ" /></label>
+      <div class="row2">
+        <label>Colonnes<input type="number" id="grid-cols" value="3" min="1" max="100" /></label>
+        <label>Lignes<input type="number" id="grid-rows" value="1" min="1" max="100" /></label>
+      </div>
+      <div class="row2">
+        <label>Écart horiz. (pt)<input type="number" id="grid-gapx" value="0" min="0" step="0.5" /></label>
+        <label>Écart vert. (pt)<input type="number" id="grid-gapy" value="0" min="0" step="0.5" /></label>
+      </div>
+      <label>Type de zone
+        <select id="grid-type">
+          <option value="text">Texte (une ligne)</option>
+          <option value="multiline">Paragraphe</option>
+          <option value="checkbox">Case à cocher</option>
+          <option value="image">Image</option>
+        </select>
+      </label>
+      <div class="row2" id="grid-text-opts">
+        <label>Alignement
+          <select id="grid-align">
+            <option value="left">Gauche</option>
+            <option value="center" selected>Centré</option>
+            <option value="right">Droite</option>
+          </select>
+        </label>
+        <label>Taille (pt)<input type="number" id="grid-size" value="11" min="4" max="200" step="0.5" /></label>
+      </div>
+      <p class="hint" id="grid-info"></p>
+      <div class="row2">
+        <button class="btn primary" id="grid-create" type="button">Créer</button>
+        <button class="btn" id="grid-cancel" type="button">Annuler</button>
+      </div>
+    </section>
+
+    <section id="props" class="card" hidden>
+      <h3>Zone sélectionnée</h3>
+      <label>Nom<input type="text" id="p-name" autocomplete="off" spellcheck="false" /></label>
+      <p class="error" id="p-name-error" hidden></p>
+      <label>Type
+        <select id="p-type">
+          <option value="text">Texte (une ligne)</option>
+          <option value="multiline">Paragraphe</option>
+          <option value="checkbox">Case à cocher</option>
+          <option value="image">Image</option>
+        </select>
+      </label>
+      <div class="row2">
+        <label>X (pt)<input type="number" id="p-x" step="0.5" /></label>
+        <label>Y (pt)<input type="number" id="p-y" step="0.5" /></label>
+      </div>
+      <div class="row2">
+        <label>Largeur (pt)<input type="number" id="p-w" step="0.5" min="1" /></label>
+        <label>Hauteur (pt)<input type="number" id="p-h" step="0.5" min="1" /></label>
+      </div>
+      <div id="p-text-opts">
+        <div class="row2">
+          <label>Alignement
+            <select id="p-align">
+              <option value="left">Gauche</option>
+              <option value="center">Centré</option>
+              <option value="right">Droite</option>
+            </select>
+          </label>
+          <label>Taille (pt)<input type="number" id="p-size" min="4" max="200" step="0.5" /></label>
+        </div>
+        <label id="p-lh-row">Interligne (pt)<input type="number" id="p-lh" min="4" max="300" step="0.5" /></label>
+        <label>Texte d'essai<textarea id="p-value" rows="2" placeholder="Ce qui sera écrit dans le PDF rempli"></textarea></label>
+      </div>
+      <label class="check" id="p-check-row"><input type="checkbox" id="p-checked" /> Cochée dans le PDF rempli</label>
+      <div id="p-image-row">
+        <label>Image à insérer (PNG ou JPEG)<input type="file" id="p-image" accept="image/*" /></label>
+        <button class="btn small" id="p-image-clear" type="button" hidden>Retirer l'image</button>
+      </div>
+      <div class="row2 actions">
+        <button class="btn" id="p-duplicate" type="button" title="Ctrl+D">Dupliquer</button>
+        <button class="btn danger" id="p-delete" type="button" title="Suppr">Supprimer</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="list-head">
+        <h2>Zones <span class="count" id="zone-count">0</span></h2>
+        <label class="check small"><input type="checkbox" id="list-all" /> toutes les pages</label>
+      </div>
+      <ul id="zone-list" class="zone-list"></ul>
+      <p class="hint" id="zone-list-empty">Aucune zone sur cette page. Choisissez un outil puis cliquez ou glissez sur le document.</p>
+    </section>
+
+    <section>
+      <h2>Affichage et police</h2>
+      <label class="check"><input type="checkbox" id="show-values" checked /> Afficher le texte d'essai sur la page</label>
+      <label>Police du PDF rempli
+        <select id="font-select"></select>
+      </label>
+    </section>
+
+    <section>
+      <h2>Exporter</h2>
+      <button class="btn primary block" id="fill-btn" type="button">Télécharger le PDF rempli</button>
+      <label class="check small"><input type="checkbox" id="fill-outlines" /> Dessiner le contour des zones (pour vérifier)</label>
+      <div class="row2">
+        <button class="btn" id="export-json" type="button" title="Coordonnées au format JSON">Coordonnées JSON</button>
+        <button class="btn" id="export-csv" type="button" title="Coordonnées pour Excel / LibreOffice">Tableur CSV</button>
+      </div>
+      <button class="btn block" id="import-json" type="button">Importer des coordonnées (JSON)</button>
+      <input type="file" id="json-input" accept="application/json,.json" hidden />
+      <button class="btn block subtle" id="clear-all" type="button">Effacer toutes les zones</button>
+    </section>
+  </aside>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<dialog id="help-dialog" class="dialog">
+  <form method="dialog">
+    <h2>Comment ça marche ?</h2>
+    <ol>
+      <li><strong>Ouvrez un PDF</strong> (bouton en haut, ou glissez-déposez le fichier).</li>
+      <li><strong>Choisissez un outil</strong> : Texte, Paragraphe, Case à cocher, Image ou Grille.</li>
+      <li><strong>Cliquez</strong> sur la page pour poser une zone de taille standard, ou <strong>glissez</strong> pour la dessiner à la bonne taille.</li>
+      <li><strong>Ajustez</strong> : déplacez une zone à la souris, tirez ses coins pour la redimensionner, renommez-la et réglez la taille du texte dans le panneau.</li>
+      <li><strong>Exportez</strong> les coordonnées (JSON ou tableur), ou téléchargez le PDF rempli avec vos textes d'essai.</li>
+    </ol>
+    <h3>Raccourcis clavier</h3>
+    <table class="keys">
+      <tr><td><kbd>V</kbd> <kbd>T</kbd> <kbd>P</kbd> <kbd>C</kbd> <kbd>I</kbd> <kbd>G</kbd></td><td>Changer d'outil</td></tr>
+      <tr><td><kbd>Flèches</kbd></td><td>Déplacer la zone de 1 pt (<kbd>Maj</kbd> : 10 pt)</td></tr>
+      <tr><td><kbd>Suppr</kbd></td><td>Supprimer la zone</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Dupliquer la zone</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Annuler / rétablir</td></tr>
+      <tr><td><kbd>Page ↑</kbd> <kbd>Page ↓</kbd></td><td>Page précédente / suivante</td></tr>
+      <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Zoom</td></tr>
+      <tr><td><kbd>Échap</kbd></td><td>Désélectionner</td></tr>
+    </table>
+    <h3>Les coordonnées</h3>
+    <p>Elles sont exprimées en <strong>points PDF</strong> (1 pt = 1/72 de pouce ≈ 0,35 mm). <code>x</code> et <code>y</code> partent du <strong>coin haut-gauche</strong> de la page, comme dans un logiciel de dessin. Le bloc <code>pdf</code> donne la même zone dans le repère natif du PDF (origine en <strong>bas</strong> à gauche), directement utilisable avec des bibliothèques comme pdf-lib, PyPDF ou iText.</p>
+    <p class="privacy">🔒 Tout se passe dans votre navigateur. Vos zones sont mémorisées sur cet appareil pour chaque fichier, afin de les retrouver à la prochaine ouverture.</p>
+    <div class="dialog-actions"><button class="btn primary" value="close">Compris</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

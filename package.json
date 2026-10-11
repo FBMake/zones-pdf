@@ -1,0 +1,12 @@
+{
+  "name": "zones-pdf",
+  "version": "1.0.0",
+  "description": "Délimitez des zones sur n'importe quel PDF, récupérez leurs coordonnées et remplissez le document, directement dans le navigateur.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "MIT"
+}
